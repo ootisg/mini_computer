@@ -1,0 +1,455 @@
+----------------------------------------------------------------------------------------------- Registers -------------------------------------------------------------------------------------------
+A total of fourteen 16-bit registers are available for use (though one of them, the Z register, is read-only). The general purpose registers A, B, and C, along with the stack pointer register SP
+are usable in most instructions. There are also three registers for intermediate results from arithmetic instructions (AA, AB, and AC). The Z register is usable with the arithmetic instructions.
+Some instructions also have access to the special registers (RL, RH, and I), and these can also use the Z register. PL, PH, and F are only directly accessible with the PSH and POP instructions,
+though PL and PH can be set or read simultaneously using a special variation of the MOV instruction. Some registers are modified as the side-effect of one or more instructions (SP, RL, RH, I, and F),
+and these effects are listed in the documentation for the instructions.
+
+The encoding for the registers is listed in the table below:
++----++----------------------------++----+----+----+------+
+|NAME|| FULL NAME                  ||REGL|SPEC|ARTH| FULL |
+|----++----------------------------++----+----+----+------+
+| A  || GENERAL-PURPOSE REGISTER A || 00 | xx | xx | 0000 |
+| B  || GENERAL-PURPOSE REGISTER B || 01 | xx | xx | 0001 |
+| C  || GENERAL-PURPOSE REGISTER C || 10 | xx | xx | 0010 |
+| SP || STACK POINTER              || 11 | xx | xx | 0011 |
+| RL || RETURN REGISTER LOW        || xx | 00 | xx | 0100 |
+| RH || RETURN REGISTER HIGH       || xx | 01 | xx | 0101 |
+| I  || INTERRUPT REGISTER         || xx | 10 | xx | 0110 |
+| Z  || ZERO REGISTER              || xx | 11 | 11 | 0111 |
+| AA || ARITHMETIC REGISTER A      || xx | xx | 00 | 1000 |
+| AB || ARITHMETIC REGISTER B      || xx | xx | 01 | 1001 |
+| AC || ARITHMETIC REGISTER C      || xx | xx | 10 | 1010 |
+| PL || PROGRAM COUNTER LOW        || xx | xx | xx | 1100 |
+| PH || PROGRAM COUNTER HIGH       || xx | xx | xx | 1101 |
+| F  || STATUS FLAGS               || xx | xx | xx | 1110 |
+| N  || NULL REGISTER              || xx | xx | xx | 1111 |
++----++----------------------------++----+----+----+------+
+
+The names for large registers are given as follows:
++----++-----------------++---+----+----+
+|NAME|| FULL NAME       ||ID |HIGH|LOW |
+|----++-----------------++---+----+----|
+| RT || RETURN REGISTER || 0 | RH | RL |
+| PC || PROGRAM COUNTER || 1 | PH | PL |
++----++-----------------++---+---------+
+
+Additionally, the F register contains multiple binary flags. The mapping of these is listed below:
++----++-------------------++---+------+
+|FLAG|| FULL NAME         ||BIT| COND |
+|----++-------------------++---+------|
+| CA || CARRY             || 0 | 000  |
+| ZE || ZERO              || 1 | 001  |
+| OV || OVERFLOW          || 2 | 010  |
+| NE || NEGATIVE          || 3 | 011  |
+| DI || DISABLE INTERRUPT || 4 | 100  |
++----++-------------------++---+------+
+
+The full list of instructions, along with how they interact with the F register, is listed below. Refer to the individual documentation for each instruction
+for exact details for how the flags are used.
++-----++-------------------------++-------------++----------+
+| ABV.|| FULL NAME               || AFFECTED BY || AFFECTS  |
+|-----++-------------------------++-------------++----------|
+| MOV || MOVE                    || NONE        || ZE       |
+| PSH || PUSH TO STACK           || NONE        || ZE       |
+| POP || POP FROM STACK          || NONE        || ZE       |
+| JMP || UNCONDITIONAL JUMP      || NONE        || NONE     |
+| JCD || JUMP IF CONDITION SET   || ANY         || NONE     |
+| JCC || JUMP IF CONDITION CLEAR || ANY         || NONE     |
+| JRL || RELATIVE JUMP           || NONE        || NONE     |
+| JSR || JUMP TO SUBROUTINE      || NONE        || NONE     |
+| RTS || RETURN FROM SUBROUTINE  || NONE        || NONE     |
+| ADD || ADD                     || NONE        || ZE       |
+| ADC || ADD WITH CARRY          || CA          || CA,OV,ZE |
+| SUB || SUBTRACT                || NONE        || ZE       |
+| SBC || SUBTRACT WITH CARRY     || CA          || CA,OV,ZE |
+| LSL || LOGICAL SHIFT LEFT      || NONE        || CA,ZE    |
+| ROL || ROTATE LEFT             || NONE        || CA,ZE    |
+| LSR || LOGICAL SHIFT RIGHT     || NONE        || CA,ZE    |
+| ROR || ROTATE RIGHT            || NONE        || CA,ZE    |
+| AND || BITWISE AND             || NONE        || ZE       |
+| IOR || INCLUSIVE BITWISE OR    || NONE        || ZE       |
+| XOR || EXCLUSIVE BITWISE OR    || NONE        || ZE       |
+| CMP || COMPARE                 || NONE        || CA,OV,ZE |
+| NOP || NO OPERATION            || NONE        || NONE     |
+| SEF || SET FLAGS               || NONE        || ANY      |
+| CLF || CLEAR FLAGS             || NONE        || ANY      |
+| ITR || FORCE INTERRUPT         || DI          || NONE     |
+| RTI || RETURN FROM INTERRUPT   || NONE        || NONE     |
++-----++-------------------------++-------------++----------+
+
+----------------------------------------------------------------------------------------- Instruction encodings -------------------------------------------------------------------------------------
+Instructions are either 16 bits wide or 32 bits wide. All 32-bit wide instructions have b0 of their opcode set, while all 16-bit wide ones have opcode b0 clear.
+The extra 16 bits are used for encoding a literal. For some instructions, this is a 16-bit literal field; for others, this is the lower 16 bits of a 24-bit literal field.
+The 16 bit literal field is also used by one variant of the MOV instruction as 2 separate 8-bit literals. This is done to make the mov instruction more convenient.
+Some short 16-bit instructions also have an encoded literal, though it is only 8 bits wide. The layout of all three of these is shown in the table below:
+
++----------++----------++-------------------+
+| OPCD(B1) || ARGS (B2)|| EXTENDED (B3, B4) |
+|----------++----------++-------------------|
+| xxxxxxx1 || xxxxxxxx || -------16L------  |
+| xxxxxxx1 || xxxxxxxx || ------2x8L------  |
+| xxxxxxx1 || ---------24L----------------  |
+| xxxxxxx0 || ---8L--- ||        N/A        |
++----------++----------++-------------------+
+
+Literals are denoted in all the tables where they appear by the syntax #L, where # is the number of bits in the literal field. They are padded with dashes to fill the
+space that they occupy in the instruction.
+24-bit literals are only available for specific variants of MOV, JMP, and JSR. 16-bit literals are available with any instruction that has a variant with b0 of the opcode set.
+
+There are four instruction families. The family of an instruction is given by b7 and b6 of their opcode; 01 for memory, 10 for branch, 11 for arithmetic, and 00 for other. The tables
+for each family are listed below. The notation for them is as follows:
+-B1, B2, B3, B4: Byte 1, 2, 3, 4, etc.
+-B2 CONST specifies the bits in B2 that are constant for that instruction variant. B2 VARS specifies the bits in B2 that are used for instruction arguments.
+-R1, R2, R3, and RH: Register 1, 2, 3, and Register High. These refer to the corresponding register fields in the B2 VARS column.
+-LR denotes a large register (either RT or PC). The ID of the register used is given by the "g" field in the B2 VARS column.
+-"s" denotes a special register for the corresponding register field, and a denotes an arithmetic register. These correspond to register
+fields as they appear, and order is preserved unless otherwise noted.
+-"$" is prefixed to denote a memory address. When in parentheses, it's optional and its presence or absence is determined by the corressponding $ in the opcode field (order for these fields
+is retained).
+-8L, 16L, and 24L are used to represent 8-bit, 16-bit, and 24-bit literals respectively. These correspond to the literal listed in B2 VARS, B3 and B4, or all three.
+-"." is used to denote a "don't care" bit. "x" is used to mark bits that are reserved because of a different field (bits specified in B2 CONST will be "x" in B2 VARS and vise versa)
+-"ccc" is a 3-bit flag ID used for conditional branches. It corresponds to the "cond" field in the assembly instruction.
+-When fields are separated by ":", they are used together to form a 32-bit wide field with the left side containing the high 2 bytes and the right side containing the low 2 bytes.
+-PSH and POP use 4-bit register IDs, padded in the table with either dashes or underscores. This is done to avoid ambiguity where the padding meets in the middle.
+-B3,B4 is a shortened field in the table (5 characters wide, but representing 16 bits). Refer to the table above for a more precise view of the instruction layout involving these bytes.
+-"8b" is used in two instructions to denote an 8-bit mask.
+-For other symbols, refer to the above register table or flags table.
+
+Some examples:
+-The instruction MOV $A:RL > B is encoded as: 			01000100 10000100 ?
+-The instruction MOV 528 > $A:B is encoded as: 			01000011 0001.000 00000010 00010000 ?
+		-(This means it can be encoded by either of):	01000011 00010000 00000010 00010000, OR ?
+								01000011 00011000 00000010 00010000 ?
+-The instruction MOV PC > RH:RL can be encoded as: 		01001.00 110001.1 ?
+-The instruction PSH PH,PL is encoded as: 			01110010 11011100 ?
+-The instruction JCC ZE 24 is encoded as:			10100011 ........ 00000000 00011000 ?
+-The instruction JSR 0xFF002A is encoded as:			100..111 11111111 00000000 00101010
+-The instruction SBC B,16 > AC is encoded as:			11111011 0001.010 00000000 00010000
+-The instruction SEF ZE,OV,DI is encoded as:			0001...0 00010110
+-The instruction NOP is encoded as:				00000000 00000000
+
+Memory family of instructions:
++-------------++----------++----------++-------++-------------------------+
+| OPCODE (B1) || B2 CONST || B2 VARS  || B3,B4 || ASSEMBLY                |
+|---+---+--+--++----------++----------++----------------------------------|
+| 01|00$|$0|0 || xxxxxxxx || ssR1R2RH ||  N/A  || MOV ($)R1 > ($)[RH:]R2  | xx 00x xx 0  ab  a
+| 01|00$|$1|0 || xxxxxxxx || ssR1R2RH ||  N/A  || MOV ($)[RH:]R2 > ($)R1  | xx 00x xx 0  ab  a
+| 01|00$|$0|1 || xxxx..xx || ss..R2RH || -16L- || MOV ($)16L > ($)[RH:]R2 | xx 00x xx 1  ab  b
+| 01|00$|11|1 || x.xx..xx || ss..R2RH || -16L- || MOV ($)[RH:]R2 > $16L   | xx 00x xx 1  aB  b
+| 01|010|00|0 || xxxxxx.x || ss.gR2RH ||  N/A  || MOV LR > RH:R2          | xx 010 xx 0  -
+| 01|010|01|0 || xxxxxx.x || ss.gR2RH ||  N/A  || MOV RH:R2 > LR          | xx 010 xx 0  -
+| 01|010|00|1 || xxxxxx.x || ssR1R2$$ || 2x8L  || MOV [$8L:]R1 > [$8L:]R2 | xx 010 xx 1  ab  c
+| 01|1R1|s0|1 || xxxxxxxx || --------24L------ || MOV $24L > R1           | xx 1xx xx 1  A   -
+| 01|1R1|s1|1 || xxxxxxxx || --------24L------ || MOV R1 > $24L           | xx 1xx xx 1   B  -
+| 01|1R1|s0|0 || xxxxxxxx || ---8L--- ||  N/A  || MOV 8L > R1             | xx 1xx xx 0  -
+| 01|011|00|0 || xxxx1111 || -R1-xxxx ||  N/A  || PSH R1                  | xx 011 00 x
+| 01|011|00|0 || xxxxxxxx || -R1-_R2_ ||  N/A  || PSH R1:R2               | xx 011 00 x
+| 01|011|01|1 || xxxxxxxx || ........ || -16L- || PSH 16L                 | xx 011 01 1
+| 01|011|01|0 || xxxxxxxx || ---8L--- ||  N/A  || PSH 8L                  | xx 011 01 0
+| 01|011|10|0 || xxxx1111 || -R1-xxxx ||  N/A  || POP R1                  | xx 011 11 x
+| 01|011|10|0 || xxxxxxxx || -R1-_R2_ ||  N/A  || POP R1,R2               | xx 011 11 x
++---+---+--+--++----------++----------++-------++-------------------------+
+
+Branch family of instructions:
++-------------++----------++----------++-------++-----------------+
+| OPCODE (B1) || B2 CONST || B2 VARS  || B3,B4 || ASSEMBLY        |
+|---+---+--+--++----------++----------++-------++-----------------|
+| 10|000|00|0 || x.xx.... || s.R1.... ||  N/A  || JMP $R1         |
+| 10|010|00|0 || xxxxxx.. || ssR1R2.. ||  N/A  || JMP $R1:R2      |
+| 10|011|00|1 || x.xx.... || s.R1.... || -16L- || JMP $R1:16L     |
+| 10|011|01|1 || x.xx.... || s.R1.... || -16L- || JMP $16L:R1     |
+| 10|001|00|1 || xxxxxxxx || --------24L------ || JMP $24L        |
+| 10|11c cc|0 || 1xxx.... || xsR1.... ||  N/A  || JCD cond R1     |
+| 10|11c cc|0 || 0xxxxxxx || x---7L-- ||  N/A  || JCD cond 7L     |
+| 10|11.|0.|1 || xxxxxxxx || ---8b--- || -16L- || JCD a,b... 16L  |
+| 10|10c cc|0 || 1.xx.... || xsR1.... ||  N/A  || JCC cond R1     |
+| 10|10c cc|0 || 0xxxxxxx || x---7L-- ||  N/A  || JCC cond 7L     |
+| 10|10.|0.|1 || xxxxxxxx || ---8b--- || -16L- || JCC a,b... 16L  |
+| 10|1..|1.|1 || xxxxxxxx || ---8L--- || -16b- || JCN a,!b... 8L  |
+| 10|000|10|0 || x.xx.... || s.R1.... ||  N/A  || JSR $R1         |
+| 10|010|10|0 || xxxxxx.. || ssR1R2.. ||  N/A  || JSR $R1:R2      |
+| 10|011|10|1 || x.xx.... || s.R1.... || -16L- || JSR $R1:16L     |
+| 10|011|11|1 || x.xx.... || s.R1.... || -16L- || JSR $16L:R1     |
+| 10|001|10|1 || xxxxxxxx || --------24L------ || JSR $24L        |
++-------------++----------++-------------------++-----------------+
+
+Arithmetic family of instructions:
++--------------++----------++----------++--------------------------+
+| OPCODE (B1)  || B2 CONST || B2 VARS  || B3,B4 || ASSEMBLY        |
+|---+---+-+-+--++----------++----------++--------------------------|
+| 11|100|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || ADD R1,R2 > R3  |
+| 11|100|0|a|1 || xxxxxxxx || aaR1..R3 || -16L- || ADD R1,16L > R3 |
+| 11|101|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || ADC R1,R2 > R3  |
+| 11|101|0|a|1 || xxxxxxxx || aaR1..R3 || -16L- || ADC R1,16L > R3 |
+| 11|110|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || SUB R1,R2 > R3  |
+| 11|110|0|a|1 || xxxx.0xx || aaR1.xR3 || -16L- || SUB R1,16L > R3 |
+| 11|110|0|a|1 || xxxx.1xx || aaR1.xR3 || -16L- || SUB 16L,R1 > R3 |
+| 11|111|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || SBC R1,R2 > R3  |
+| 11|111|0|a|1 || xxxx.0xx || aaR1.xR3 || -16L- || SBC R1,16L > R3 |
+| 11|111|0|a|1 || xxxx.1xx || aaR1.xR3 || -16L- || SBC 16L,R1 > R3 |
+| 11|000|1|a|0 || x.xx..xx || a.R1..R3 ||  N/A  || LSL R1 > R3     |
+| 11|001|1|a|0 || x.xx..xx || a.R1..R3 ||  N/A  || ROL R1 > R3     |
+| 11|010|1|a|0 || x.xx..xx || a.R1..R3 ||  N/A  || LSR R1 > R3     |
+| 11|011|1|a|0 || x.xx..xx || a.R1..R3 ||  N/A  || ROR R1 > R3     |
+| 11|000|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || AND R1,R2 > R3  |
+| 11|000|0|a|1 || xxxxxxxx || aaR1..R3 || -16L- || AND R1,16L > R3 |
+| 11|001|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || IOR R1,R2 > R3  |
+| 11|001|0|a|1 || xxxxxxxx || aaR1..R3 || -16L- || IOR R1,16L > R3 |
+| 11|011|0|a|0 || xxxxxxxx || aaR1R2R3 ||  N/A  || XOR R1,R2 > R3  |
+| 11|011|0|a|1 || xxxxxxxx || aaR1..R3 || -16L- || XOR R1,16L > R3 |
++---+---+-+-+--++----------++----------++-------++-----------------+
+
+Other instructions:
++-------------++----------++------------------+
+| OPCODE (B1) || B2 VARS  || ASSEMBLY         |
+|---+--+---+--++----------++------------------|
+| 00|00|000|0 || ........ || NOP              |
+| 00|01|...|0 || ---8b--- || SEF F1,F2,F3,... |
+| 00|11|...|0 || ---8b--- || CLF F1,F2,F3,... |
+| 00|10|000|0 || ---8L--- || ITR 8L           |
+| 00|10|001|0 || ---8L--- || RTI              |
++---+--+---+--++----------++------------------+
+
+Some assembly instructions are actually just specific aliases for other instructions. These are as follows:
++------------++----------++----------++-------++------------++----------------+
+| OPCODE (B1)|| B2 CONST || B2 VARS  || B3,B4 || ASSEMBLY   || ALIAS FOR      |
+|------------++----------++----------++-------++------------++----------------|
+| 10|11000|0 || ..xx.... || ..R1.... ||  N/A  || JRL R1     || JCD AW R1      |
+| 10|11000|1 || ........ || ........ || -16L- || JRL 16L    || JCD AW 16L     |
+| 10|01.00|0 || 110100.. || xxxxxx.. ||  N/A  || RTS        || JMP $RH:RL     |
+| 11|11101|0 || xxxxxx11 || aaR1R2xx ||  N/A  || CMP R1,R2  || SBC R1,R2 > Z  |
+| 11|11101|1 || xxxx.011 || aaR1.xxx || -16L- || CMP R1,16L || SBC R1,16L > Z |
+| 11|11101|1 || xxxx.111 || aaR1.xxx || -16L- || CMP 16L,R1 || SBC 16L,R1 > Z |
++---+-----+--++----------++----------++-------++------------++----------------+
+
+
+------------------------------------------------------------------------------------------- Instruction info ----------------------------------------------------------------------------------------
+General formatting rules:
+-Only one literal can be used per instruction. For instance, "MOV $0010 > $2004" is not a valid instruction since it uses a literal value for both the source and the destination.
+        -The exception to this is a single variant of MOV that allows you to specify a literal high address byte for both the source and the destination.
+-"normal" registers are A, B, C, and SP. "special" registers are RL, RH, I, Z. "arithmetic" registers are AA, AB, AC, Z. (Z is both a special register and an arithmetic register).
+-Arithmetic instructions (ADD, ADC, SUB, SBC, LSL, LSR, ROL, ROR, AND, IOR, XOR) can all use either "normal" or "arithmetic" registers for their arguemnts.
+	-One of the arguments can also be a 16-bit literal
+	
+About the relative addressing mode:
+-This mode allows an instruction to indirect to a value from a memory location rather than load the value directly.
+	-When using the relative addressing mode, prefix the argument with $
+	-For the src field in MOV, relative addressing treats the arguemnt as an address from which it looks up the value in memory.
+	-For the dest field in MOV, relative addressing uses the register(s) or literal as an address in memory to store the result.
+	-For the addr field in JMP and JSR, its use is implicit and it specifies the memory address to jump to. JCC and JCD do not use this since they jump to offsets instead of directly to addresses.
+
+-------------------------------------- MOV ----------------------------------------
+Moves values from one location to another. When applicable, relative addressing (denoted by the $ sign) may be used for the source, destination, or both.
+Syntax: MOV src > dest
+Flags: Sets the ZE flag if the value moved is equal to zero. Clears the ZE flag if the value moved is not equal to zero.
+Notes:
+	-You can access the full address space by using two registers for the address (in the format $R1:R2, where R1 is the high 8 bits and R2 is the low 16 bits, and R1 can only be A, B, C, or Z).
+	-Large registers can be moved to a combination of two registers (R1:R2, where R1 is the high 16 bits and R2 is the low 16 bits). Both R1 and R2 in this usage can be either normal or special registers.
+	-24-bit literals are supported for both source addresses and destination addresses, though if you use a 24-bit literal address for the source the destination must be a single register (and vise versa).
+	-A special version of MOV exists that can move an 8-bit literal value into a normal register, and is only a 16-bit wide instruction. This is the only 16-bit wide MOV variant that supports use of a literal.
+		-The value moved will be a 16-bit value, with the upper 8 bits cleared and the lower 8 bits as the supplied literal.
+
+-------------------------------------- PSH ----------------------------------------
+Pushes a register or literal onto the stack. Does not support relative addressing.
+Flags: Sets the ZE flag if the value pushed to the stack is equal to zero. Clears the ZE flag if the value pushed is not zero.
+Syntax: PSH value
+Notes:
+	-ANY register can be used, including large registers. Any 2 registers can also be combined (Using the syntax R1:R2) into a 32-bit value to be pushed.
+	-A special version of PSH can be used that pushes an 8-bit literal value to the stack, and is only 16 bits wide.
+		-The value moved will be a 16-bit value, with the upper 8 bits cleared and the lower 8 bits as the supplied literal.
+	-Using this instruction will increase the value of SP by 1 for a 16-bit value, and by 2 for a 32-bit value
+	
+-------------------------------------- POP ----------------------------------------
+Pops the value on the top of the stack and stores them in the registers given.
+Flags: Sets the ZE flag if a zero is popped off the stack. Clears teh ZE flag if the popped value is not zero.
+Syntax: PSH dest
+Notes:
+	-ANY register can be used, including large registers. Any 2 registers can also be combined (Using the syntax R1:R2) into a 32-bit wide register to fill.
+		-The number of bits popped will match the size of the register(s) used.
+	-Using this instruction will decrease the value of SP by 1 for a 16-bit value, and by 2 for a 32-bit value.
+
+-------------------------------------- JMP ----------------------------------------
+Performs an unconditional jump to the given address
+Flags: N/A
+Syntax: JMP $addr
+Notes:
+	-addr can be given as one register, 2 registers (R1:R2), a register with a 16-bit literal (16L:R1 or R1:16L), or a single literal of up to 24 bits.
+
+-------------------------------------- JSR ----------------------------------------
+Performs an unconditional jump to the given address, and populates RT (RH and RL) with the return address
+Flags: N/A
+Syntax: JSR $addr
+Notes:
+	-addr can be given as one register, 2 registers (R1:R2), a register with a 16-bit literal (16L:R1 or R1:16L), or a single literal of up to 24 bits.
+	-Affects the values of RH and RL
+
+-------------------------------------- RTS ----------------------------------------
+Returns from a subroutine by performing an unconditional jump to the address stored in RH and RL.
+Flags: N/A
+Syntax: RTS
+Notes:
+	-Alias for JMP $RH:RL
+
+-------------------------------------- JCD ----------------------------------------
+Performs a jump to the given offset if the given condition flag(s) is/are set
+Flags: Affected by any, depending on arguments
+Syntax: JCD cond offs
+	-Valid condition flags are CA, ZE, OV, NE, DI, and AW
+Notes:
+	-Jump range is -32768 to 32767 (in 16-bit words, not bytes) when using a register for the offset or when using an instruction variant with a 16L field
+        -Jump range is -128 to 127 (in 16-bit words, not bytes) when using an instruction variant with a 8L field
+	-Jump range is -64 to 63 (in 16-bit words, not bytes) when using an instruction variant with the 7L field
+        -Any number of flags can be specified and separated by commas. This can't be used for a 16-bit variant.
+
+-------------------------------------- JCC ----------------------------------------
+Performs a jump to the given offset if the given condition flag(s) is/are cleared
+Flags: Affected by any, depending on arguments
+Syntax: JCC cond offs
+	-Valid condition flags are CA, ZE, OV, NE, and DI
+Notes:
+	-Jump range is -32768 to 32767 (in 16-bit words, not bytes) when using a register for the offset or when using an instruction variant with a 16L field
+        -Jump range is -128 to 127 (in 16-bit words, not bytes) when using an instruction variant with a 8L field
+	-Jump range is -64 to 63 (in 16-bit words, not bytes) when using an instruction variant with the 7L field
+        -Any number of flags can be specified and separated by commas. This can't be used for a 16-bit variant.
+
+-------------------------------------- JCN ----------------------------------------
+Performs a jump to the given offset if the given condition flag is cleared
+Flags: Affected by any, depending on arguments
+Syntax: JCC cond offs
+	-Valid condition flags are CA, ZE, OV, NE, DI, !CA, !ZE, !OV, !NE, and !DI
+Notes:
+	-Jump range is always -128 to 127
+        -Can check both for flags being set and flags being cleared
+        -To check if a flag is cleared, prefix with !
+        -32-bit instruction only
+        
+-------------------------------------- JRL ----------------------------------------
+Performs a relative jump to the given offset.
+Flags: N/A
+Syntax: JRL offs
+Notes:
+	-Alias for JCD AW offs
+
+-------------------------------------- ADD ----------------------------------------
+Adds two values together, but does not affect the carry flag
+Flags: Sets the zero flag if the result of the addition is zero
+Syntax: ADD arg1,arg2 > dest
+	-Equivalent behavior to "dest = arg1 + arg2"
+
+-------------------------------------- SUB ----------------------------------------
+Subtracts two values, but does not affect the carry flag
+Flags: Sets the zero flag if the result of the subtraction is zero
+Syntax: SUB arg1,arg2 > dest
+	-Equivalent behavior to "dest = arg1 - arg2"
+	
+-------------------------------------- ADC ----------------------------------------
+Adds two values. CA acts as the carry-in bit to the adder.
+Flags:
+	-If CA is set when this instruction is called, the result will have +1 added to it
+	-Sets the ZE flag if the result of the addition is zero
+	-Sets the CA flag if the addition results in an overflow
+	-Sets the OV flag if the addition would result in an overflow while performing signed two's compliment addition
+Syntax: ADD arg1,arg2 > dest
+	-Ordering is the same as ADD
+
+-------------------------------------- SBC ----------------------------------------
+Subtracts two values. CA acts as the carry-in bit to the adder.
+Flags:
+	-If CA is set when this instruction is called, the result will have -1 added to it
+	-Sets the ZE flag if the result of the addition is zero
+	-Sets the CA flag if the subtraction results in an overflow
+	-Sets the OV flag if the subtraction would result in an overflow while performing signed two's compliment subtraction
+Syntax: SBC arg1,arg2 > dest
+	-Ordering is the same as SUB
+	
+-------------------------------------- CMP ----------------------------------------
+Compares two values.
+Flags:
+	-Flag behavoir is identical to SBC. Of particular interest are:
+		-If arg1 = arg2, the ZE flag is set and the CA flag is cleared
+		-If arg1 > arg2, the ZE flag is cleared and the CA flag is cleared
+		-If arg1 < arg2, the ZE flag is cleared and the CA flag is set
+		-If CA is set when this instruction is called, it will have the effect of subtracting 1 from arg1 before the comparison
+Syntax: CMP arg1,arg2
+Notes:
+	-Alias for SBC arg1,arg2 > Z
+
+-------------------------------------- LSL ----------------------------------------
+Performs a logical shift left by 1 bit on src and stores it in dest
+Flags:
+	-Sets CA if the bit shifted off the end was a 1, clears CA otherwise
+	-Sets ZE if the result is 0 after shifting, clears ZE otherwise
+Syntax: LSL src > dest
+
+-------------------------------------- LSR ----------------------------------------
+Performs a logical shift right by 1 bit on src and stores it in dest
+Flags:
+	-Sets CA if the bit shifted off the end was a 1, clears CA otherwise
+	-Sets ZE if the result is 0 after shifting, clears ZE otherwise
+Syntax: LSR src > dest
+
+-------------------------------------- ROL ----------------------------------------
+Performs a rotate left by 1 bit on src and stores it in dest
+Flags:
+	-Sets CA if the bit rotated off the end was a 1, clears CA otherwise
+	-Sets ZE if the result is 0 after rotating, clears ZE otherwise
+Syntax: ROL src > dest
+
+-------------------------------------- ROR ----------------------------------------
+Performs a rotate right by 1 bit on src and stores it in dest
+Flags:
+	-Sets CA if the bit rotated off the end was a 1, clears CA otherwise
+	-Sets ZE if the result is 0 after rotating, clears ZE otherwise
+Syntax: ROR src > dest
+
+-------------------------------------- AND ----------------------------------------
+Performs a bitwise AND on src1 and src2 and stores it in dest
+Flags: Sets ZE if the result is zero, clears ZE otherwise
+Syntax: AND src1,src2 > dest
+	-Equivalent behavior to "dest = src1 & src2"
+
+-------------------------------------- IOR ----------------------------------------
+Performs a bitwise inclusive OR on src1 and src2 and stores it in dest
+Flags: Sets ZE if the result is zero, clears ZE otherwise
+Syntax: IOR src1,src2 > dest
+	-Equivalent behavior to "dest = src1 | src2"
+	
+-------------------------------------- XOR ----------------------------------------
+Performs a bitwise exclusive OR on src1 and src2 and stores it in dest
+Flags: Sets ZE if the result is zero, clears ZE otherwise
+Syntax: XOR src1,src2 > dest
+	-Equivalent behavior to "dest = src1 ^ src2"
+
+-------------------------------------- NOP ----------------------------------------
+Does nothing for 1 cycle
+Flags: N/A
+Syntax: NOP
+
+-------------------------------------- SEF ----------------------------------------
+Sets the given processor flags
+Flags: Can potentially change any
+Syntax: SEF flag1,flag2,...
+Notes:
+	-The list of flags provided can be as long as needed, up to including every processor flag.
+
+-------------------------------------- CLF ----------------------------------------
+Clears the given processor flags
+Flags: Can potentially change any
+Syntax: CLF flag1,flag2,...
+Notes:
+	-The list of flags provided can be as long as needed, up to including every processor flag.
+
+-------------------------------------- ITR ----------------------------------------
+Forces a system interrupt with the given interrupt ID
+Flags: If the DI flag is set, this instruction will not trigger an interrupt
+Syntax: ITR id
+Notes:
+	-When called, the interrupt return address is pushed onto an internal interrupt return address stack. This stack is 4 levels deep.
+
+-------------------------------------- RTI ----------------------------------------
+Returns from an interrupt routine
+Flags: N/A
+Syntax: RTI
+Notes:
+	-The return address is popped from an internal interrupt stack.

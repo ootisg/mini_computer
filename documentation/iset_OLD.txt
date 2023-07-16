@@ -1,0 +1,123 @@
+Registers: 3 GP registers (a, b, c), plus:
+r - return address low; usable like a GP register
+rh - return address high; special register
+pc - program counter (pl, ph)
+sp - stack pointer
+i - interrupt register
+f - flags (non-accessible)
+aa, ab, ac, z (arithmetic registers only accessible to arithmetic functions)
+a, b, c, r are 00, 01, 10, 11
+sp, f, i, z are 00, 01, 10, 11 (special registers IDS are treated differently)
+aa, ab, ac, z are 00, 01, 10, 11
+Register packets:
+..xxyyzz, where xx, yy are addresses to use and zz is the special register. .. are reserved for special use.
+
+Memory -
+MOV - Move;
+	01000rrs, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx special set and b=yy special set. When applicable, only the 16 LSB are used. zz is used as the address high byte, and may only be a, b, or c (11 is the 0 register)
+	if s=1, yy is instead populated with the field d.
+	d is direction (determines which side the 16L parameter is on).
+	rr are relative addressing flags, one for each parameter
+MOV - Move; 
+	01001.d0, rp.
+	rp: abxxyy.z, where a, b are xx,yy special register flags.
+MOV - Move; 
+	0101dxx1, 24L.
+MOV - Move;
+	01100rr0, rp
+	rp: d.xxyyzz, where d=direction, xx and yy are hi/lo, and zz is other reg.
+MOV - Move;
+	01101xx0, 8L.
+PSH - Push;
+	0111002s, rp, (opt)16L.
+	rp: xxxxyyyy - Any 2 registers, including arth registers(?)
+PSH - Push;
+	011101.0, 8L.
+POP - Pop; register
+	01111.20, rp.
+	rp: xxxxyyyy - Any 2 registers, including arth registers(?)
+01xxxxxx
+
+Branch -
+JMP - Jump;
+	1002.00s, rp, (opt)16L.
+	rp: abxxyy.., where a=xx special set and b=yy special set.
+JMP - Jump;
+	100..011, 24L.
+JCS - Jump cond set; Relative only. Jumps if condition is set.
+	1011cccs, rp, (opt)16L.
+JCC - Jump cond clear; Relative only. Jumps if condition is not set.
+	1010cccs, rp, (opt)16L.
+JRL - Jump rel;
+	Alias for "JCD always"
+JSR - Jump subroutine; literal or register.
+	1002.10s, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx special set and b=yy special set. When applicable, only the 16 LSB are used. zz is the high byte, and can be a, b, or c (11 is Z)
+JSR - Jump subroutine;
+	100..111, 24L.
+RTS - Return subroutine;
+	Alias for "JMP rh,rl"
+10xxxxxx
+
+Arithmetic -
+ADD - Add;
+	111000ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+ADC - Add with carry;
+	111010ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+SUB - Subtract;
+	111100ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+	If s is set, yy will instead contain a direction field. (00 for subtract 16L from reg1, 01 for subtract reg1 from 16L)
+SBC - Subtract with carry;
+	111110ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+	If s is set, yy will instead contain a direction field. (00 for subtract 16L from reg1, 01 for subtract reg1 from 16L)
+BSL - Shift left
+	110001ds, rp.
+	rp: a.xx..zz, where a=xx arth set. zz is destination register. If d is set, zz is an arth register.
+ROL - Rotate left
+	110011ds, rp.
+	rp: a.xx..zz, where a=xx arth set. zz is destination register. If d is set, zz is an arth register.
+BSR - Shift right
+	110101ds, rp.
+	rp: a.xx..zz, where a=xx arth set. zz is destination register. If d is set, zz is an arth register.
+ROR - Rotate right
+	110111ds, rp.
+	rp: a.xx..zz, where a=xx arth set. zz is destination register. If d is set, zz is an arth register.
+AND - And;
+	110000ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+IOR - Or;
+	110010ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+XOR - Xor;
+	110110ds, rp, (opt)16L.
+	rp: abxxyyzz, where a=xx arth set and b=yy arth set. zz is destination register. If d is set, zz is an arth register.
+	
+11xxxxxx
+Notes:
+"Uses adder" is b7 & b6 & b5
+"Invert before adding" is b4
+"Affects carry flag" is b3 (for add/adc/sub/sbc)
+"Is bit shift" is b7 & b6 & b2
+Shift/rotate have notable bit patterns
+And/or/xor have notable bit patterns
+
+Flags -
+SEF - Set flag; flag ID
+	0001xxxx, xxxx....
+CLF - Clear flag; flag ID
+	0011xxxx, xxxx....
+00xxxxxx
+
+Misc -
+NOP - No op
+	00000000, 00000000.
+ITR - Interrupt; itr id
+	00100000, xxxxxxxx.
+RTI - Return from interrupt
+	00100010, ........
+00xxxxxx
